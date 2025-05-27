@@ -118,9 +118,8 @@ mountains-vs-beaches/
 ## 👥 Team Members - Group 10
 
 - Aswar Hanif
-- Ivander Perdana Mokhtar
 - Rifqi Okta Saputra
-- Wahyu Wahid
+
 
 ## 📝 License
 
