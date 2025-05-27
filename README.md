@@ -65,7 +65,7 @@ The model was trained on a dataset containing 52,444 records with the following 
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/mountains-vs-beaches.git
+git clone https://github.com/1ki10/mountains-vs-beaches.git
 cd mountains-vs-beaches
 ```
 
@@ -119,7 +119,6 @@ mountains-vs-beaches/
 
 - Aswar Hanif
 - Rifqi Okta Saputra
-
 
 ## 📝 License
 
