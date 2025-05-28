@@ -3,15 +3,51 @@ import pandas as pd
 import numpy as np
 import pickle
 import os
-from sklearn.preprocessing import StandardScaler
+import sys
+import traceback
 
-# ===== PAGE CONFIGURATION =====
+# ===== EARLY ERROR DETECTION =====
 st.set_page_config(
     page_title="Vacation Preference AI",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Check critical components first
+try:
+    st.info("🔍 Loading application components...")
+    
+    # Test sklearn import
+    from sklearn.preprocessing import StandardScaler
+    st.success("✅ Sklearn loaded successfully")
+    
+    # Test model file
+    model_file = 'Vacation_Preference_XGBoost_Model.pkl'
+    if os.path.exists(model_file):
+        file_size = os.path.getsize(model_file)
+        st.success(f"✅ Model file found ({file_size:,} bytes)")
+        
+        # Test model loading
+        with open(model_file, 'rb') as file:
+            test_model = pickle.load(file)
+        st.success("✅ Model loads successfully")
+        del test_model  # Free memory
+        
+    else:
+        st.error("❌ Model file missing!")
+        st.write("Files in directory:", os.listdir('.'))
+        st.error("Please ensure 'Vacation_Preference_XGBoost_Model.pkl' is uploaded to the repository")
+        st.stop()
+        
+except Exception as e:
+    st.error(f"❌ Startup error: {str(e)}")
+    st.error("Full error details:")
+    st.code(traceback.format_exc())
+    st.stop()
+
+# Clear startup messages after successful check
+st.empty()
 
 # ===== CUSTOM CSS =====
 st.markdown("""
@@ -153,87 +189,112 @@ st.markdown("""
 # ===== LOAD MODEL FUNCTIONS =====
 @st.cache_resource
 def load_model():
-    """Load XGBoost model with proper error handling"""
+    """Load XGBoost model with enhanced error handling"""
     model_file = 'Vacation_Preference_XGBoost_Model.pkl'
     
-    # Check if file exists
-    if not os.path.exists(model_file):
-        return None, False
-    
     try:
+        # Check if file exists
+        if not os.path.exists(model_file):
+            st.error(f"❌ Model file not found: {model_file}")
+            return None, False
+        
+        # Check file size
+        file_size = os.path.getsize(model_file)
+        if file_size == 0:
+            st.error(f"❌ Model file is empty: {model_file}")
+            return None, False
+        
+        # Load model
         with open(model_file, 'rb') as file:
             model = pickle.load(file)
+        
+        # Verify model has required methods
+        if not hasattr(model, 'predict') or not hasattr(model, 'predict_proba'):
+            st.error("❌ Invalid model: missing required methods")
+            return None, False
+            
         return model, True
+        
     except FileNotFoundError:
+        st.error(f"❌ File not found: {model_file}")
         return None, False
     except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
+        st.error(f"❌ Error loading model: {str(e)}")
+        st.error(f"Error details: {traceback.format_exc()}")
         return None, False
 
 @st.cache_resource 
 def get_proper_scaler():
     """Get scaler with proper training statistics"""
-    scaler = StandardScaler()
-    # Statistics from actual training data (52,444 samples)
-    scaler.mean_ = np.array([35.2, 55487.3, 1.6, 2.5, 2985.7, 150.2, 149.8, 0.3, 0.7, 0.33, 0.34, 0.33, 0.25, 0.25, 0.25, 0.25, 0.33, 0.33, 0.34, 0.25, 0.25, 0.25, 0.25])
-    scaler.scale_ = np.array([12.8, 25234.1, 0.9, 1.4, 1987.2, 144.7, 144.5, 0.46, 0.46, 0.47, 0.47, 0.47, 0.43, 0.43, 0.43, 0.43, 0.47, 0.47, 0.47, 0.43, 0.43, 0.43, 0.43])
-    return scaler
+    try:
+        scaler = StandardScaler()
+        # Statistics from actual training data (52,444 samples)
+        scaler.mean_ = np.array([35.2, 55487.3, 1.6, 2.5, 2985.7, 150.2, 149.8, 0.3, 0.7, 0.33, 0.34, 0.33, 0.25, 0.25, 0.25, 0.25, 0.33, 0.33, 0.34, 0.25, 0.25, 0.25, 0.25])
+        scaler.scale_ = np.array([12.8, 25234.1, 0.9, 1.4, 1987.2, 144.7, 144.5, 0.46, 0.46, 0.47, 0.47, 0.47, 0.43, 0.43, 0.43, 0.43, 0.47, 0.47, 0.47, 0.43, 0.43, 0.43, 0.43])
+        return scaler
+    except Exception as e:
+        st.error(f"Error creating scaler: {e}")
+        return None
 
 def create_input_dataframe(age, gender, income, education, location, travel_freq, budget, activities, season, mountain_dist, beach_dist, pets, env_concern):
     """Create properly formatted input dataframe"""
+    try:
+        # Base data
+        data = {
+            'Age': age,
+            'Income': income,
+            'Travel_Frequency': travel_freq,
+            'Vacation_Budget': budget,
+            'Proximity_to_Mountains': mountain_dist,
+            'Proximity_to_Beaches': beach_dist,
+            'Pets': 1 if pets else 0,
+            'Environmental_Concerns': 1 if env_concern else 0
+        }
+        
+        # Education encoding with safe mapping
+        edu_map = {'high school': 0, 'bachelor': 1, 'master': 2, 'doctorate': 3}
+        data['Education_Level'] = edu_map.get(education, 1)  # Default to bachelor
+        
+        # One-hot encoding for categorical variables
+        # Gender
+        data['Gender_female'] = 1 if gender == 'female' else 0
+        data['Gender_male'] = 1 if gender == 'male' else 0
+        data['Gender_non-binary'] = 1 if gender == 'non-binary' else 0
+        
+        # Activities
+        data['Preferred_Activities_hiking'] = 1 if activities == 'hiking' else 0
+        data['Preferred_Activities_skiing'] = 1 if activities == 'skiing' else 0
+        data['Preferred_Activities_sunbathing'] = 1 if activities == 'sunbathing' else 0
+        data['Preferred_Activities_swimming'] = 1 if activities == 'swimming' else 0
+        
+        # Location
+        data['Location_rural'] = 1 if location == 'rural' else 0
+        data['Location_suburban'] = 1 if location == 'suburban' else 0
+        data['Location_urban'] = 1 if location == 'urban' else 0
+        
+        # Season
+        data['Favorite_Season_fall'] = 1 if season == 'fall' else 0
+        data['Favorite_Season_spring'] = 1 if season == 'spring' else 0
+        data['Favorite_Season_summer'] = 1 if season == 'summer' else 0
+        data['Favorite_Season_winter'] = 1 if season == 'winter' else 0
+        
+        # Create dataframe with correct column order
+        columns = [
+            'Age', 'Income', 'Education_Level', 'Travel_Frequency', 'Vacation_Budget',
+            'Proximity_to_Mountains', 'Proximity_to_Beaches', 'Pets', 'Environmental_Concerns',
+            'Gender_female', 'Gender_male', 'Gender_non-binary',
+            'Preferred_Activities_hiking', 'Preferred_Activities_skiing',
+            'Preferred_Activities_sunbathing', 'Preferred_Activities_swimming',
+            'Location_rural', 'Location_suburban', 'Location_urban',
+            'Favorite_Season_fall', 'Favorite_Season_spring',
+            'Favorite_Season_summer', 'Favorite_Season_winter'
+        ]
+        
+        return pd.DataFrame([data])[columns]
     
-    # Base data
-    data = {
-        'Age': age,
-        'Income': income,
-        'Travel_Frequency': travel_freq,
-        'Vacation_Budget': budget,
-        'Proximity_to_Mountains': mountain_dist,
-        'Proximity_to_Beaches': beach_dist,
-        'Pets': 1 if pets else 0,
-        'Environmental_Concerns': 1 if env_concern else 0
-    }
-    
-    # Education encoding with safe mapping
-    edu_map = {'high school': 0, 'bachelor': 1, 'master': 2, 'doctorate': 3}
-    data['Education_Level'] = edu_map.get(education, 1)  # Default to bachelor
-    
-    # One-hot encoding for categorical variables
-    # Gender
-    data['Gender_female'] = 1 if gender == 'female' else 0
-    data['Gender_male'] = 1 if gender == 'male' else 0
-    data['Gender_non-binary'] = 1 if gender == 'non-binary' else 0
-    
-    # Activities
-    data['Preferred_Activities_hiking'] = 1 if activities == 'hiking' else 0
-    data['Preferred_Activities_skiing'] = 1 if activities == 'skiing' else 0
-    data['Preferred_Activities_sunbathing'] = 1 if activities == 'sunbathing' else 0
-    data['Preferred_Activities_swimming'] = 1 if activities == 'swimming' else 0
-    
-    # Location
-    data['Location_rural'] = 1 if location == 'rural' else 0
-    data['Location_suburban'] = 1 if location == 'suburban' else 0
-    data['Location_urban'] = 1 if location == 'urban' else 0
-    
-    # Season
-    data['Favorite_Season_fall'] = 1 if season == 'fall' else 0
-    data['Favorite_Season_spring'] = 1 if season == 'spring' else 0
-    data['Favorite_Season_summer'] = 1 if season == 'summer' else 0
-    data['Favorite_Season_winter'] = 1 if season == 'winter' else 0
-    
-    # Create dataframe with correct column order
-    columns = [
-        'Age', 'Income', 'Education_Level', 'Travel_Frequency', 'Vacation_Budget',
-        'Proximity_to_Mountains', 'Proximity_to_Beaches', 'Pets', 'Environmental_Concerns',
-        'Gender_female', 'Gender_male', 'Gender_non-binary',
-        'Preferred_Activities_hiking', 'Preferred_Activities_skiing',
-        'Preferred_Activities_sunbathing', 'Preferred_Activities_swimming',
-        'Location_rural', 'Location_suburban', 'Location_urban',
-        'Favorite_Season_fall', 'Favorite_Season_spring',
-        'Favorite_Season_summer', 'Favorite_Season_winter'
-    ]
-    
-    return pd.DataFrame([data])[columns]
+    except Exception as e:
+        st.error(f"Error creating input dataframe: {e}")
+        return None
 
 # ===== HEADER =====
 st.markdown("""
@@ -245,14 +306,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ===== LOAD RESOURCES =====
-model, model_loaded = load_model()
-scaler = get_proper_scaler()
+with st.spinner("🤖 Loading AI model..."):
+    model, model_loaded = load_model()
+    scaler = get_proper_scaler()
 
 # ===== SIDEBAR =====
 with st.sidebar:
     st.markdown("### 🎛️ Model Status")
     
-    if model_loaded:
+    if model_loaded and scaler is not None:
         st.success("✅ AI Model Ready")
         st.markdown("""
         <div class="sidebar-section">
@@ -263,14 +325,18 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.error("❌ Model Not Found")
-        st.error("Please ensure 'Vacation_Preference_XGBoost_Model.pkl' is in the same directory")
+        st.error("❌ Model Not Ready")
+        if not model_loaded:
+            st.error("Model file issue detected")
+        if scaler is None:
+            st.error("Scaler initialization failed")
+        st.error("Please check the deployment logs")
         st.stop()
     
     st.markdown("---")
     st.markdown("### 🎮 Quick Test Profiles")
     
-    # Profile buttons without st.rerun() to prevent infinite loops
+    # Profile buttons
     if st.button("🏔️ Mountain Enthusiast", help="Load mountain lover profile", use_container_width=True):
         st.session_state.profile_type = "mountain"
         
@@ -308,45 +374,42 @@ with st.sidebar:
 # ===== MAIN CONTENT =====
 st.markdown("## 📝 Tell Us About Yourself")
 
+# Profile defaults
 if 'profile_type' in st.session_state:
     if st.session_state.profile_type == "mountain":
-        # Mountain enthusiast defaults - BASED ON REAL DATA ANALYSIS
         st.info("🏔️ **Mountain Enthusiast Profile Active** - Values based on real data patterns!")
-        age_default, gender_default, income_default = 44, 0, 70000  # Real avg: 43.5 age, $69,868 income
-        education_default, location_default = 1, 2  # bachelor, rural (rural is correct)
-        travel_default, budget_default = 5, 3000  # Reasonable budget for higher income
-        activities_default, season_default = 2, 3  # skiing (not hiking!), fall (not winter!)
-        mountain_dist_default, beach_dist_default = 100, 300  # Closer to mountains
-        pets_default, env_default = True, True  # Keep these as reasonable assumptions
+        age_default, gender_default, income_default = 44, 0, 70000
+        education_default, location_default = 1, 2
+        travel_default, budget_default = 5, 3000
+        activities_default, season_default = 2, 3
+        mountain_dist_default, beach_dist_default = 100, 300
+        pets_default, env_default = True, True
         
     elif st.session_state.profile_type == "beach":
-        # Beach enthusiast defaults - BASED ON REAL DATA ANALYSIS  
         st.info("🏖️ **Beach Enthusiast Profile Active** - Values based on real data patterns!")
-        age_default, gender_default, income_default = 44, 1, 70000  # Real avg: 43.5 age, $70,067 income
-        education_default, location_default = 2, 1  # master, suburban (not urban!)
-        travel_default, budget_default = 4, 4000  # Higher budget for beach vacations
-        activities_default, season_default = 3, 0  # sunbathing (correct!), summer (correct!)
-        mountain_dist_default, beach_dist_default = 300, 50  # Closer to beaches
-        pets_default, env_default = False, False  # Keep as assumption
+        age_default, gender_default, income_default = 44, 1, 70000
+        education_default, location_default = 2, 1
+        travel_default, budget_default = 4, 4000
+        activities_default, season_default = 3, 0
+        mountain_dist_default, beach_dist_default = 300, 50
+        pets_default, env_default = False, False
         
     else:
-        # Fallback to normal defaults - ALSO UPDATED
-        age_default, gender_default, income_default = 44, 0, 70000  # Use real data averages
-        education_default, location_default = 1, 1  # bachelor, suburban (most common overall)
+        age_default, gender_default, income_default = 44, 0, 70000
+        education_default, location_default = 1, 1
         travel_default, budget_default = 3, 3000
-        activities_default, season_default = 3, 0  # sunbathing, summer (most common overall)
-        mountain_dist_default, beach_dist_default = 200, 200  # Equal distance
+        activities_default, season_default = 3, 0
+        mountain_dist_default, beach_dist_default = 200, 200
         pets_default, env_default = False, False
 else:
-    # Normal defaults when no profile is selected - UPDATED
-    age_default, gender_default, income_default = 44, 0, 70000  # Real data averages
-    education_default, location_default = 1, 1  # bachelor, suburban
+    age_default, gender_default, income_default = 44, 0, 70000
+    education_default, location_default = 1, 1
     travel_default, budget_default = 3, 3000
-    activities_default, season_default = 3, 0  # sunbathing, summer (most common)
+    activities_default, season_default = 3, 0
     mountain_dist_default, beach_dist_default = 200, 200
     pets_default, env_default = False, False
 
-# Input sections with proper validation
+# Input sections
 st.markdown('<div class="feature-section">', unsafe_allow_html=True)
 st.markdown("### 👤 Personal Information")
 
@@ -408,8 +471,8 @@ with col_pred2:
     predict_button = st.button("🔮 PREDICT MY DESTINATION", type="primary", use_container_width=True)
 
 if predict_button:
-    if not model_loaded:
-        st.error("❌ Cannot make prediction: Model not loaded")
+    if not model_loaded or scaler is None:
+        st.error("❌ Cannot make prediction: System not ready")
     else:
         with st.spinner("🤖 AI is analyzing your preferences..."):
             try:
@@ -418,6 +481,10 @@ if predict_button:
                     age, gender, income, education, location, travel_freq, 
                     budget, activities, season, mountain_dist, beach_dist, pets, env_concern
                 )
+                
+                if input_df is None:
+                    st.error("❌ Failed to process input data")
+                    st.stop()
                 
                 # Debug mode outputs
                 if debug_mode:
@@ -608,6 +675,7 @@ if predict_button:
                     
             except Exception as e:
                 st.error(f"❌ Prediction failed: {str(e)}")
+                st.error(f"Error details: {traceback.format_exc()}")
                 st.error("Please try again or contact support if the problem persists.")
 
 # ===== ABOUT SECTION =====
